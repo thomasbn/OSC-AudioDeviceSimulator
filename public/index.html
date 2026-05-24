@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSC Audio Simulator</title>
+<style>
+:root {
+  --bg: #111;
+  --surface: #1c1c1c;
+  --surface2: #252525;
+  --surface3: #2e2e2e;
+  --border: #333;
+  --border2: #404040;
+  --text: #ccc;
+  --text-dim: #666;
+  --text-bright: #eee;
+  --accent: #3d8bff;
+  --green: #1db954;
+  --green-dim: #145e30;
+  --yellow: #f0b429;
+  --red: #e63950;
+  --mute-on: #d97706;
+  --solo-on: #1db954;
+  --fader-track: #1a1a1a;
+  --fader-thumb: #8a8a8a;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 11px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+header {
+  background: #0a0a0a;
+  border-bottom: 1px solid var(--border);
+  padding: 7px 14px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.brand {
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--accent);
+  letter-spacing: 2px;
+  white-space: nowrap;
+}
+
+.brand span { color: var(--text-dim); font-size: 10px; font-weight: normal; letter-spacing: 0; margin-left: 6px; }
+
+.osc-config {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.cfg-label { color: var(--text-dim); white-space: nowrap; }
+
+.cfg-input {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 3px 7px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 11px;
+  width: 100px;
+}
+
+.cfg-input.narrow { width: 62px; }
+
+.btn-apply {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  padding: 3px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  transition: opacity 0.1s;
+}
+
+.btn-apply:hover { opacity: 0.85; }
+
+.ws-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.ws-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 4px var(--red);
+  transition: all 0.3s;
+}
+
+.ws-dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+/* ── Transport ───────────────────────────────────────────── */
+.transport {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.t-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 5px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1px;
+  font-weight: bold;
+  transition: all 0.1s;
+  outline: none;
+}
+
+.t-btn:hover { background: var(--surface3); }
+.t-btn:active { transform: scale(0.97); }
+
+.t-btn.play-active { background: var(--green); color: #000; border-color: var(--green); }
+.t-btn.rec-active  { background: var(--red);   color: #fff; border-color: var(--red);   }
+
+.t-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+
+.bpm-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bpm-label { color: var(--text-dim); }
+
+.bpm-input {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-bright);
+  padding: 4px 6px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 12px;
+  width: 52px;
+  text-align: center;
+  outline: none;
+}
+
+.position {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  min-width: 90px;
+  text-align: right;
+}
+
+.position .pos-val { color: var(--text); }
+
+/* ── Console area ────────────────────────────────────────── */
+.console-area {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.mixer {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 10px 10px 10px 10px;
+  gap: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* ── Channel strip ───────────────────────────────────────── */
+.channel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 5px 6px;
+  width: 86px;
+  min-width: 86px;
+  gap: 5px;
+  transition: border-color 0.2s;
+}
+
+.channel:hover { border-color: var(--border2); }
+
+.channel.master-strip {
+  width: 98px;
+  min-width: 98px;
+  margin-left: 8px;
+  background: #181820;
+  border-color: #334;
+}
+
+/* Channel name */
+.ch-name-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 10px;
+  text-align: center;
+  outline: none;
+  cursor: text;
+  padding: 1px 2px;
+  transition: border-color 0.15s;
+  letter-spacing: 0.5px;
+}
+
+.ch-name-input:hover { border-bottom-color: var(--border2); }
+.ch-name-input:focus { border-bottom-color: var(--accent); }
+
+.master-label {
+  font-size: 10px;
+  color: #7788cc;
+  letter-spacing: 2px;
+  text-align: center;
+  width: 100%;
+}
+
+/* EQ Section */
+.eq-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 5px 0;
+}
+
+.eq-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  gap: 4px;
+}
+
+.eq-band-label {
+  font-size: 9px;
+  color: var(--text-dim);
+  width: 14px;
+  flex-shrink: 0;
+}
+
+/* Pan section */
+.pan-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.pan-label { font-size: 9px; color: var(--text-dim); }
+
+/* Canvas knob */
+canvas.knob {
+  display: block;
+  cursor: ns-resize;
+  border-radius: 50%;
+}
+
+canvas.knob:hover { filter: brightness(1.15); }
+
+/* Mute / Solo buttons */
+.ch-buttons {
+  display: flex;
+  gap: 3px;
+  width: 100%;
+  justify-content: center;
+}
+
+.btn-mute, .btn-solo {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text-dim);
+  padding: 3px 0;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  outline: none;
+  transition: all 0.1s;
+}
+
+.btn-mute:hover { border-color: var(--mute-on); color: var(--mute-on); }
+.btn-solo:hover { border-color: var(--solo-on); color: var(--solo-on); }
+
+.btn-mute.on { background: var(--mute-on); color: #000; border-color: var(--mute-on); }
+.btn-solo.on { background: var(--solo-on); color: #000; border-color: var(--solo-on); }
+
+/* Fader + VU section */
+.fader-area {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 5px;
+  min-height: 110px;
+  width: 100%;
+}
+
+/* VU meter */
+.vu-wrap {
+  display: flex;
+  gap: 2px;
+  height: 100%;
+  align-items: flex-end;
+}
+
+.vu-col {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 1px;
+  height: 100%;
+  width: 7px;
+}
+
+.seg {
+  width: 100%;
+  height: 5px;
+  border-radius: 1px;
+  background: #1e1e1e;
+  transition: background 0.04s;
+}
+
+.seg.g  { background: var(--green); }
+.seg.y  { background: var(--yellow); }
+.seg.r  { background: var(--red); box-shadow: 0 0 3px var(--red); }
+
+/* Clip LED */
+.clip-led {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #1e1e1e;
+  border: 1px solid #333;
+  margin-bottom: 2px;
+  transition: background 0.1s;
+}
+
+.clip-led.on { background: var(--red); box-shadow: 0 0 4px var(--red); }
+
+/* Vertical fader */
+.fader-wrap {
+  height: 100%;
+  width: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+input[type="range"].fader {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: ns-resize;
+  outline: none;
+  transform: rotate(-90deg);
+  width: 100px;
+}
+
+input[type="range"].fader::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, #1a1a1a 0%, #2a2a2a 100%);
+  height: 3px;
+  border-radius: 2px;
+  border: 1px solid #3a3a3a;
+}
+
+input[type="range"].fader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 8px;
+  background: linear-gradient(to bottom, #aaa, #777);
+  border-radius: 2px;
+  border: 1px solid #999;
+  margin-top: -3px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  cursor: ns-resize;
+}
+
+input[type="range"].fader::-moz-range-track {
+  background: #2a2a2a;
+  height: 3px;
+  border-radius: 2px;
+}
+
+input[type="range"].fader::-moz-range-thumb {
+  width: 18px;
+  height: 8px;
+  background: linear-gradient(to bottom, #aaa, #777);
+  border-radius: 2px;
+  border: 1px solid #999;
+  cursor: ns-resize;
+}
+
+/* Unity mark */
+.unity-mark {
+  position: absolute;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  top: calc(25%);
+}
+
+.unity-line {
+  width: 16px;
+  height: 1px;
+  background: #555;
+}
+
+/* dB label */
+.fader-db {
+  font-size: 8px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* Channel number */
+.ch-num {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+
+/* Master VU labels */
+.master-vu-labels {
+  display: flex;
+  gap: 2px;
+  font-size: 8px;
+  color: var(--text-dim);
+}
+
+/* ── Bottom: OSC Monitor ─────────────────────────────────── */
+.monitor {
+  height: 160px;
+  background: #0e0e0e;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-shrink: 0;
+}
+
+.monitor-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 10px;
+  font-size: 10px;
+  line-height: 1.6;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.monitor-log::-webkit-scrollbar { width: 5px; }
+.monitor-log::-webkit-scrollbar-thumb { background: var(--border); }
+
+.log-entry {
+  display: flex;
+  gap: 8px;
+  padding: 1px 0;
+  border-bottom: 1px solid #1a1a1a;
+  word-break: break-all;
+}
+
+.log-ts    { color: #444; flex-shrink: 0; width: 60px; }
+.log-dir   { flex-shrink: 0; width: 24px; font-weight: bold; }
+.log-dir.in  { color: #3d8bff; }
+.log-dir.out { color: #f0b429; }
+.log-dir.err { color: var(--red); }
+.log-addr  { color: var(--text); flex-shrink: 0; }
+.log-args  { color: var(--text-dim); }
+.log-peer  { color: #444; font-size: 9px; flex-shrink: 0; }
+
+.monitor-send {
+  width: 300px;
+  border-left: 1px solid var(--border);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.send-title {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.send-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.send-row label { color: var(--text-dim); font-size: 10px; min-width: 36px; }
+
+.send-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 7px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 11px;
+  outline: none;
+}
+
+.send-input:focus { border-color: var(--accent); }
+
+.btn-send {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  padding: 5px 14px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  align-self: flex-end;
+  transition: opacity 0.1s;
+}
+
+.btn-send:hover { opacity: 0.85; }
+
+.send-hint {
+  font-size: 9px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.log-clear {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 9px;
+  align-self: flex-start;
+  margin-left: auto;
+  transition: all 0.1s;
+}
+
+.log-clear:hover { color: var(--text); border-color: var(--border2); }
+
+.monitor-header {
+  display: flex;
+  align-items: center;
+  padding: 5px 10px 0;
+  gap: 8px;
+  border-bottom: 1px solid #181818;
+  flex-shrink: 0;
+}
+
+.monitor-title {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  padding-bottom: 5px;
+}
+
+.monitor-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.monitor-header-row {
+  display: flex;
+  align-items: center;
+  padding: 5px 10px 4px;
+  border-bottom: 1px solid #181818;
+  gap: 8px;
+}
+
+/* Scrollbar */
+.mixer::-webkit-scrollbar { height: 5px; }
+.mixer::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────── -->
+<header>
+  <div class="brand">OSC SIM<span>audio device</span></div>
+  <div class="osc-config">
+    <span class="cfg-label">listen</span>
+    <input class="cfg-input narrow" id="localPort" placeholder="8000" value="8000">
+    <span class="cfg-label">→</span>
+    <input class="cfg-input" id="remoteAddress" placeholder="127.0.0.1" value="127.0.0.1">
+    <span class="cfg-label">:</span>
+    <input class="cfg-input narrow" id="remotePort" placeholder="57120" value="57120">
+    <button class="btn-apply" id="applyConfig">Apply</button>
+  </div>
+  <div class="ws-status">
+    <div class="ws-dot" id="wsDot"></div>
+    <span id="wsLabel">connecting…</span>
+  </div>
+</header>
+
+<!-- ── Transport ───────────────────────────────────────── -->
+<div class="transport">
+  <button class="t-btn" id="btnPlay">&#9654; PLAY</button>
+  <button class="t-btn" id="btnStop">&#9632; STOP</button>
+  <button class="t-btn" id="btnRec">&#9679; REC</button>
+  <div class="t-sep"></div>
+  <div class="bpm-wrap">
+    <span class="bpm-label">BPM</span>
+    <input class="bpm-input" id="bpmInput" type="number" min="20" max="300" value="120">
+  </div>
+  <div class="position"><span class="pos-val" id="posDisplay">0:00.000</span></div>
+</div>
+
+<!-- ── Mixer ────────────────────────────────────────────── -->
+<div class="console-area">
+  <div class="mixer" id="mixer">
+    <!-- Channels generated by JS -->
+  </div>
+</div>
+
+<!-- ── OSC Monitor ─────────────────────────────────────── -->
+<div class="monitor">
+  <div class="monitor-left">
+    <div class="monitor-header-row">
+      <span class="monitor-title">OSC MONITOR</span>
+      <button class="log-clear" id="clearLog">clear</button>
+    </div>
+    <div class="monitor-log" id="monitorLog"></div>
+  </div>
+  <div class="monitor-send">
+    <div class="send-title">Send OSC</div>
+    <div class="send-row">
+      <label>addr</label>
+      <input class="send-input" id="sendAddr" placeholder="/channel/1/fader" value="/channel/1/fader">
+    </div>
+    <div class="send-row">
+      <label>args</label>
+      <input class="send-input" id="sendArgs" placeholder="0.75" value="0.75">
+    </div>
+    <button class="btn-send" id="btnSend">SEND</button>
+    <div class="send-hint">Multiple args: space-separated<br>Types: numbers=float/int, text=string</div>
+  </div>
+</div>
+
+<script>
+// ── Constants ─────────────────────────────────────────────
+const CH_COUNT = 8;
+const SEG_COUNT = 16; // VU segments per column
+const SEG_GREEN  = 10;
+const SEG_YELLOW = 4;
+const SEG_RED    = 2;
+
+// ── State ──────────────────────────────────────────────────
+let state = null;
+let ws = null;
+let levels = { ch: [], masterL: 0, masterR: 0, clipL: false, clipR: false };
+
+// ── Canvas Knob ────────────────────────────────────────────
+function drawKnob(canvas, value, opts = {}) {
+  const { color = '#3d8bff', centerZero = false } = opts;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const cx = w / 2, cy = h / 2;
+  const r = Math.min(w, h) / 2 - 1.5;
+  const startRad = (7 / 6) * Math.PI; // 7 o'clock in canvas (210° from top CCW = 210+90=300° from 3 o'clock)
+  // Actually in canvas: 0=3 o'clock, π/2=6, π=9, 3π/2=12
+  // 7 o'clock = 30° past 6 o'clock going toward 9 o'clock
+  // = 90 + 30 = 120° from 3 o'clock = 120 * π/180 = 2π/3 ... no
+  // Let me just use the classic knob convention:
+  // start = 225° (bottom-left), end = 315° (bottom-right), sweep = 270°
+  // In canvas degrees (CW from 3 o'clock):
+  // 225° = 225° → 7 o'clock position? Let's verify:
+  //   0°=3, 90°=6, 180°=9, 270°=12, 315°=1:30, 360°=3
+  //   225° = between 9 and 12, i.e. 10:30 position. That's actually correct for start of a knob!
+  // end = 315° = between 12 and 3, i.e. 1:30 position.
+  // Sweep from 225° to 315° going clockwise = 90° which is wrong (too small)
+  // We need to go from 225° clockwise PAST 0° to 315°: 360-225+315 = 450°? No...
+  // 225° to 315° going clockwise = 90°. Going counter-clockwise = 270°.
+  // We want counter-clockwise? No, knobs go clockwise for increasing value.
+  // Hmm. Let me reconsider.
+
+  // Standard convention:
+  // Min = 7 o'clock = 210° from 12 o'clock going clockwise
+  //     = in canvas (0° = 3 o'clock, CW):
+  //       12 o'clock = 270° (canvas), 7 o'clock = 270 + 120 = 390 = 30° (canvas). No wait.
+  //       7 o'clock = 210° clockwise from 12 o'clock
+  //       = 270° (canvas for 12) + 210° = 480° mod 360 = 120° (canvas)
+  // Max = 5 o'clock = 150° from 12 o'clock going clockwise
+  //     = 270° + 150° = 420° mod 360 = 60° (canvas)
+  // Going from 120° to 60° clockwise = 360 - 120 + 60 = 300°.
+
+  // So: startAngle = 120° (canvas), sweep = 300° clockwise, endAngle = 60° (canvas, wrapping around)
+
+  const A_START = 120 * Math.PI / 180; // 7 o'clock
+  const A_SWEEP = 300 * Math.PI / 180; // 300° clockwise sweep
+  const A_END   = A_START + A_SWEEP;   // = 60° + 360° = wraps (canvas handles this)
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Outer ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#111';
+  ctx.fill();
+  ctx.strokeStyle = '#2a2a2a';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Track (background arc)
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - 3, A_START, A_END);
+  ctx.strokeStyle = '#2a2a2a';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // Value arc
+  let arcStart = A_START;
+  let arcEnd;
+  if (centerZero) {
+    const center = A_START + A_SWEEP / 2;
+    if (value >= 0.5) {
+      arcStart = center;
+      arcEnd = A_START + value * A_SWEEP;
+    } else {
+      arcStart = A_START + value * A_SWEEP;
+      arcEnd = center;
+    }
+  } else {
+    arcEnd = A_START + value * A_SWEEP;
+  }
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - 3, arcStart, arcEnd);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // Pointer
+  const angle = A_START + value * A_SWEEP;
+  const pr = r - 6;
+  ctx.beginPath();
+  ctx.moveTo(cx + (r * 0.25) * Math.cos(angle), cy + (r * 0.25) * Math.sin(angle));
+  ctx.lineTo(cx + pr * Math.cos(angle), cy + pr * Math.sin(angle));
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+}
+
+function makeKnob(size, initValue, color, centerZero, onChange) {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'knob';
+  canvas.width = size;
+  canvas.height = size;
+  canvas._value = initValue;
+  canvas._centerZero = centerZero;
+  canvas._color = color;
+  drawKnob(canvas, initValue, { color, centerZero });
+
+  let dragging = false;
+  let startY = 0;
+  let startVal = 0;
+
+  canvas.addEventListener('mousedown', e => {
+    dragging = true;
+    startY = e.clientY;
+    startVal = canvas._value;
+    e.preventDefault();
+  });
+
+  canvas.addEventListener('dblclick', () => {
+    canvas._value = centerZero ? 0.5 : 0;
+    drawKnob(canvas, canvas._value, { color, centerZero });
+    onChange(canvas._value);
+  });
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.02 : 0.02;
+    canvas._value = Math.max(0, Math.min(1, canvas._value + delta));
+    drawKnob(canvas, canvas._value, { color, centerZero });
+    onChange(canvas._value);
+  }, { passive: false });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = (startY - e.clientY) / 120;
+    canvas._value = Math.max(0, Math.min(1, startVal + delta));
+    drawKnob(canvas, canvas._value, { color, centerZero });
+    onChange(canvas._value);
+  });
+
+  document.addEventListener('mouseup', () => { dragging = false; });
+
+  return canvas;
+}
+
+function updateKnob(canvas, value) {
+  canvas._value = value;
+  drawKnob(canvas, value, { color: canvas._color, centerZero: canvas._centerZero });
+}
+
+// ── VU Meter ───────────────────────────────────────────────
+function makeVuMeter(cols = 1) {
+  const wrap = document.createElement('div');
+  wrap.className = 'vu-wrap';
+  wrap.style.height = '100%';
+  const segs = [];
+  for (let c = 0; c < cols; c++) {
+    const col = document.createElement('div');
+    col.className = 'vu-col';
+    const colSegs = [];
+    for (let i = 0; i < SEG_COUNT; i++) {
+      const seg = document.createElement('div');
+      seg.className = 'seg';
+      col.appendChild(seg);
+      colSegs.push(seg);
+    }
+    wrap.appendChild(col);
+    segs.push(colSegs);
+  }
+  return { wrap, segs };
+}
+
+function updateVU(segs, level, clip) {
+  const lit = Math.round(level * SEG_COUNT);
+  segs.forEach((seg, i) => {
+    const active = i < lit;
+    const pos = i; // 0 = bottom
+    if (!active) { seg.className = 'seg'; return; }
+    if (pos < SEG_GREEN)  seg.className = 'seg g';
+    else if (pos < SEG_GREEN + SEG_YELLOW) seg.className = 'seg y';
+    else seg.className = clip ? 'seg r' : 'seg y';
+  });
+}
+
+// ── Build Channel Strip ─────────────────────────────────────
+const chKnobs = []; // { pan, high, mid, low }
+const chFaders = [];
+const chVuSegs = [];
+const chClipLeds = [];
+
+function buildChannel(ch, index) {
+  const strip = document.createElement('div');
+  strip.className = 'channel';
+  strip.dataset.ch = index;
+
+  // Name
+  const nameInput = document.createElement('input');
+  nameInput.className = 'ch-name-input';
+  nameInput.type = 'text';
+  nameInput.value = ch.name;
+  nameInput.maxLength = 10;
+  nameInput.addEventListener('change', () => {
+    send({ type: 'control', ch: index, param: 'name', value: nameInput.value });
+  });
+  strip.appendChild(nameInput);
+
+  // EQ section
+  const eqSection = document.createElement('div');
+  eqSection.className = 'eq-section';
+  const knobs = {};
+
+  ['high', 'mid', 'low'].forEach(band => {
+    const row = document.createElement('div');
+    row.className = 'eq-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'eq-band-label';
+    lbl.textContent = band[0].toUpperCase();
+    // EQ -12 to +12 dB → normalize to 0-1 (center=0.5)
+    const norm = (ch.eq[band] + 12) / 24;
+    const knob = makeKnob(26, norm, '#888', true, v => {
+      const db = (v - 0.5) * 24; // -12 to +12
+      send({ type: 'control', ch: index, param: 'eq', band, value: db });
+    });
+    knob._color = '#888';
+    knob._centerZero = true;
+    knobs[band] = knob;
+    row.appendChild(lbl);
+    row.appendChild(knob);
+    eqSection.appendChild(row);
+  });
+  strip.appendChild(eqSection);
+
+  // Pan
+  const panSection = document.createElement('div');
+  panSection.className = 'pan-section';
+  const panLbl = document.createElement('div');
+  panLbl.className = 'pan-label';
+  panLbl.textContent = 'PAN';
+  const panNorm = (ch.pan + 1) / 2;
+  const panKnob = makeKnob(30, panNorm, '#5a9eff', true, v => {
+    const pan = (v - 0.5) * 2; // -1 to 1
+    send({ type: 'control', ch: index, param: 'pan', value: pan });
+  });
+  panKnob._color = '#5a9eff';
+  panKnob._centerZero = true;
+  knobs.pan = panKnob;
+  panSection.appendChild(panLbl);
+  panSection.appendChild(panKnob);
+  strip.appendChild(panSection);
+
+  // Mute / Solo
+  const buttons = document.createElement('div');
+  buttons.className = 'ch-buttons';
+  const btnMute = document.createElement('button');
+  btnMute.className = 'btn-mute' + (ch.mute ? ' on' : '');
+  btnMute.textContent = 'M';
+  btnMute.title = 'Mute';
+  btnMute.addEventListener('click', () => {
+    const muted = !state.channels[index].mute;
+    send({ type: 'control', ch: index, param: 'mute', value: muted });
+  });
+  const btnSolo = document.createElement('button');
+  btnSolo.className = 'btn-solo' + (ch.solo ? ' on' : '');
+  btnSolo.textContent = 'S';
+  btnSolo.title = 'Solo';
+  btnSolo.addEventListener('click', () => {
+    const soloed = !state.channels[index].solo;
+    send({ type: 'control', ch: index, param: 'solo', value: soloed });
+  });
+  buttons.appendChild(btnMute);
+  buttons.appendChild(btnSolo);
+  strip.appendChild(buttons);
+
+  // Fader + VU
+  const faderArea = document.createElement('div');
+  faderArea.className = 'fader-area';
+
+  // VU column with clip LED
+  const vuOuter = document.createElement('div');
+  vuOuter.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;height:100%';
+  const clipLed = document.createElement('div');
+  clipLed.className = 'clip-led';
+  const { wrap: vuWrap, segs } = makeVuMeter(1);
+  vuOuter.appendChild(clipLed);
+  vuOuter.appendChild(vuWrap);
+
+  // Fader
+  const faderWrap = document.createElement('div');
+  faderWrap.className = 'fader-wrap';
+  const fader = document.createElement('input');
+  fader.type = 'range';
+  fader.className = 'fader';
+  fader.min = '0'; fader.max = '1'; fader.step = '0.001';
+  fader.value = ch.fader;
+  fader.style.width = '100px';
+  fader.addEventListener('input', () => {
+    send({ type: 'control', ch: index, param: 'fader', value: +fader.value });
+  });
+  faderWrap.appendChild(fader);
+  faderArea.appendChild(vuOuter);
+  faderArea.appendChild(faderWrap);
+  strip.appendChild(faderArea);
+
+  // Channel number
+  const chNum = document.createElement('div');
+  chNum.className = 'ch-num';
+  chNum.textContent = ch.id;
+  strip.appendChild(chNum);
+
+  chKnobs.push(knobs);
+  chFaders.push(fader);
+  chVuSegs.push(segs[0]);
+  chClipLeds.push(clipLed);
+
+  strip._btnMute = btnMute;
+  strip._btnSolo = btnSolo;
+  strip._nameInput = nameInput;
+
+  return strip;
+}
+
+// ── Build Master Strip ──────────────────────────────────────
+let masterFader, masterVuSegsL, masterVuSegsR, masterClipL, masterClipR;
+
+function buildMaster(master) {
+  const strip = document.createElement('div');
+  strip.className = 'channel master-strip';
+
+  const lbl = document.createElement('div');
+  lbl.className = 'master-label';
+  lbl.textContent = 'MASTER';
+  strip.appendChild(lbl);
+
+  // Clip LEDs row
+  const clipRow = document.createElement('div');
+  clipRow.style.cssText = 'display:flex;gap:12px;justify-content:center;margin-top:4px;';
+  masterClipL = document.createElement('div');
+  masterClipL.className = 'clip-led';
+  masterClipL.title = 'Clip L';
+  masterClipR = document.createElement('div');
+  masterClipR.className = 'clip-led';
+  masterClipR.title = 'Clip R';
+  clipRow.appendChild(masterClipL);
+  clipRow.appendChild(masterClipR);
+  strip.appendChild(clipRow);
+
+  // Stereo VU meters + fader
+  const faderArea = document.createElement('div');
+  faderArea.className = 'fader-area';
+
+  const { wrap: vuWrapL, segs: segsL } = makeVuMeter(1);
+  masterVuSegsL = segsL[0];
+  const { wrap: vuWrapR, segs: segsR } = makeVuMeter(1);
+  masterVuSegsR = segsR[0];
+
+  const faderWrap = document.createElement('div');
+  faderWrap.className = 'fader-wrap';
+  masterFader = document.createElement('input');
+  masterFader.type = 'range';
+  masterFader.className = 'fader';
+  masterFader.min = '0'; masterFader.max = '1'; masterFader.step = '0.001';
+  masterFader.value = master.volume;
+  masterFader.style.width = '100px';
+  masterFader.addEventListener('input', () => {
+    send({ type: 'master', value: +masterFader.value });
+  });
+  faderWrap.appendChild(masterFader);
+
+  const vuLabels = document.createElement('div');
+  vuLabels.className = 'master-vu-labels';
+  vuLabels.innerHTML = '<span>L</span><span>R</span>';
+
+  const vuWrap = document.createElement('div');
+  vuWrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;height:100%';
+  const vuCols = document.createElement('div');
+  vuCols.style.cssText = 'display:flex;gap:2px;flex:1;height:100%';
+  vuCols.appendChild(vuWrapL);
+  vuCols.appendChild(vuWrapR);
+  vuWrap.appendChild(vuCols);
+  vuWrap.appendChild(vuLabels);
+
+  faderArea.appendChild(vuWrap);
+  faderArea.appendChild(faderWrap);
+  strip.appendChild(faderArea);
+
+  const lbl2 = document.createElement('div');
+  lbl2.className = 'ch-num';
+  lbl2.textContent = 'M';
+  strip.appendChild(lbl2);
+
+  return strip;
+}
+
+// ── Build Mixer ────────────────────────────────────────────
+const chStrips = [];
+
+function buildMixer(st) {
+  const mixer = document.getElementById('mixer');
+  mixer.innerHTML = '';
+  chStrips.length = 0;
+  chKnobs.length = 0;
+  chFaders.length = 0;
+  chVuSegs.length = 0;
+  chClipLeds.length = 0;
+
+  st.channels.forEach((ch, i) => {
+    const strip = buildChannel(ch, i);
+    chStrips.push(strip);
+    mixer.appendChild(strip);
+  });
+
+  const masterStrip = buildMaster(st.master);
+  mixer.appendChild(masterStrip);
+}
+
+// ── Apply State to UI ──────────────────────────────────────
+function applyState(st) {
+  state = st;
+
+  st.channels.forEach((ch, i) => {
+    if (!chStrips[i]) return;
+    chStrips[i]._nameInput.value = ch.name;
+    chStrips[i]._btnMute.className = 'btn-mute' + (ch.mute ? ' on' : '');
+    chStrips[i]._btnSolo.className = 'btn-solo' + (ch.solo ? ' on' : '');
+    if (Math.abs(+chFaders[i].value - ch.fader) > 0.005) chFaders[i].value = ch.fader;
+
+    const panNorm = (ch.pan + 1) / 2;
+    if (Math.abs(chKnobs[i].pan._value - panNorm) > 0.005) updateKnob(chKnobs[i].pan, panNorm);
+
+    ['high', 'mid', 'low'].forEach(band => {
+      const norm = (ch.eq[band] + 12) / 24;
+      if (Math.abs(chKnobs[i][band]._value - norm) > 0.005) updateKnob(chKnobs[i][band], norm);
+    });
+  });
+
+  if (masterFader && Math.abs(+masterFader.value - st.master.volume) > 0.005) {
+    masterFader.value = st.master.volume;
+  }
+
+  // Transport
+  document.getElementById('btnPlay').className = 't-btn' + (st.transport.playing ? ' play-active' : '');
+  document.getElementById('btnRec').className  = 't-btn' + (st.transport.recording ? ' rec-active' : '');
+  const bpmInput = document.getElementById('bpmInput');
+  if (document.activeElement !== bpmInput) bpmInput.value = st.transport.bpm;
+}
+
+// ── Apply Levels ────────────────────────────────────────────
+function applyLevels(data) {
+  levels = data;
+  data.ch.forEach((lvl, i) => {
+    if (chVuSegs[i]) updateVU(chVuSegs[i], lvl.level, lvl.clip);
+    if (chClipLeds[i]) chClipLeds[i].className = 'clip-led' + (lvl.clip ? ' on' : '');
+  });
+  if (masterVuSegsL) updateVU(masterVuSegsL, data.masterL, data.clipL);
+  if (masterVuSegsR) updateVU(masterVuSegsR, data.masterR, data.clipR);
+  if (masterClipL)   masterClipL.className = 'clip-led' + (data.clipL ? ' on' : '');
+  if (masterClipR)   masterClipR.className = 'clip-led' + (data.clipR ? ' on' : '');
+}
+
+// ── Position display ────────────────────────────────────────
+function fmtPosition(pos) {
+  const bars = Math.floor(pos / 4);
+  const beat = Math.floor(pos % 4) + 1;
+  const tick = Math.floor((pos % 1) * 1000);
+  return `${bars}:0${beat}.${String(tick).padStart(3, '0')}`;
+}
+
+// ── OSC Monitor ─────────────────────────────────────────────
+const MAX_LOG = 200;
+let logEntries = [];
+
+function addLog(entry) {
+  logEntries.push(entry);
+  if (logEntries.length > MAX_LOG) logEntries.shift();
+  renderLogEntry(entry);
+}
+
+function renderLogEntry(entry) {
+  const log = document.getElementById('monitorLog');
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+
+  const ts = new Date(entry.ts);
+  const timeStr = ts.toTimeString().slice(0, 8);
+
+  const tsEl   = document.createElement('span'); tsEl.className = 'log-ts'; tsEl.textContent = timeStr;
+  const dirEl  = document.createElement('span');
+  const addrEl = document.createElement('span'); addrEl.className = 'log-addr';
+  const argsEl = document.createElement('span'); argsEl.className = 'log-args';
+  const peerEl = document.createElement('span'); peerEl.className = 'log-peer';
+
+  if (entry.type === 'osc_in') {
+    dirEl.className = 'log-dir in'; dirEl.textContent = 'IN';
+    addrEl.textContent = entry.address;
+    argsEl.textContent = Array.isArray(entry.args) ? entry.args.map(a => formatArg(a)).join(' ') : '';
+    peerEl.textContent = entry.from || '';
+  } else if (entry.type === 'osc_out') {
+    dirEl.className = 'log-dir out'; dirEl.textContent = 'OUT';
+    addrEl.textContent = entry.address;
+    argsEl.textContent = Array.isArray(entry.args) ? entry.args.map(a => formatArg(a)).join(' ') : '';
+    peerEl.textContent = entry.to || '';
+  } else {
+    dirEl.className = 'log-dir err'; dirEl.textContent = 'ERR';
+    addrEl.textContent = entry.message || '';
+  }
+
+  div.append(tsEl, dirEl, addrEl, argsEl, peerEl);
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function formatArg(a) {
+  if (typeof a === 'number') return Number.isInteger(a) ? String(a) : a.toFixed(4);
+  return String(a);
+}
+
+// ── WebSocket ───────────────────────────────────────────────
+function connect() {
+  ws = new WebSocket(`ws://${location.host}`);
+
+  ws.onopen = () => {
+    document.getElementById('wsDot').className = 'ws-dot on';
+    document.getElementById('wsLabel').textContent = 'connected';
+  };
+
+  ws.onclose = () => {
+    document.getElementById('wsDot').className = 'ws-dot';
+    document.getElementById('wsLabel').textContent = 'disconnected – retrying…';
+    setTimeout(connect, 2000);
+  };
+
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    switch (msg.type) {
+      case 'state':
+        if (!state) {
+          buildMixer(msg.state);
+        }
+        applyState(msg.state);
+        break;
+      case 'levels':
+        applyLevels(msg);
+        break;
+      case 'osc_in':
+      case 'osc_out':
+      case 'osc_error':
+        addLog(msg);
+        break;
+      case 'position':
+        document.getElementById('posDisplay').textContent = fmtPosition(msg.position);
+        break;
+      case 'config':
+        document.getElementById('localPort').value    = msg.config.localPort;
+        document.getElementById('remoteAddress').value = msg.config.remoteAddress;
+        document.getElementById('remotePort').value   = msg.config.remotePort;
+        break;
+    }
+  };
+}
+
+function send(msg) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+}
+
+// ── UI Events ───────────────────────────────────────────────
+document.getElementById('applyConfig').addEventListener('click', () => {
+  send({
+    type: 'set_config',
+    config: {
+      localPort:     +document.getElementById('localPort').value,
+      remoteAddress:  document.getElementById('remoteAddress').value.trim(),
+      remotePort:    +document.getElementById('remotePort').value,
+    },
+  });
+});
+
+document.getElementById('btnPlay').addEventListener('click', () => send({ type: 'transport', action: 'play' }));
+document.getElementById('btnStop').addEventListener('click', () => send({ type: 'transport', action: 'stop' }));
+document.getElementById('btnRec').addEventListener('click',  () => send({ type: 'transport', action: 'record' }));
+
+document.getElementById('bpmInput').addEventListener('change', e => {
+  const bpm = Math.max(20, Math.min(300, +e.target.value));
+  e.target.value = bpm;
+  send({ type: 'transport', action: 'bpm', value: bpm });
+});
+
+document.getElementById('btnSend').addEventListener('click', () => {
+  const address = document.getElementById('sendAddr').value.trim();
+  const raw     = document.getElementById('sendArgs').value.trim();
+  if (!address) return;
+  const args = raw ? raw.split(/\s+/).map(a => isNaN(a) ? a : +a) : [];
+  send({ type: 'send_osc', address, args });
+});
+
+document.getElementById('sendAddr').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btnSend').click();
+});
+document.getElementById('sendArgs').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btnSend').click();
+});
+
+document.getElementById('clearLog').addEventListener('click', () => {
+  logEntries = [];
+  document.getElementById('monitorLog').innerHTML = '';
+});
+
+// ── Start ───────────────────────────────────────────────────
+connect();
+</script>
+</body>
+</html>
